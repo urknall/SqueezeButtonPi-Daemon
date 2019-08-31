@@ -38,7 +38,7 @@
 #include "GPIO.h"
 #include "sbpd.h"
 
-#include <wiringPi.h>
+#include <pigpio.h>
 
 //
 //  Configured buttons
@@ -74,41 +74,48 @@ uint32_t gettime_ms(void) {
 //  calls callback if state change detected.
 //
 //
-void updateButtons()
+//gpioAlertFunc_t updateButtons()
+void updateButtons( int pin, int level, uint32_t tick)
 {
 	uint32_t now;
-	now = gettime_ms();
+//	now = gettime_ms();
 	struct button *button = buttons;
-	for (; button < buttons + numberofbuttons; button++)
-	{
-		bool bit = digitalRead(button->pin);
-		bool presstype;
-		logdebug("%lu - %lu= %i  Pin Value=%i   Stored Value=%i", (unsigned long)now, (unsigned long)button->timepressed, (signed int)(now - button->timepressed), bit, button->value);
 
-		int increment = 0;
-		if ( (bit == button->pressed) && (button->timepressed == 0) ){	
-			button->timepressed = now;
-			increment = 0;
-		} else if (button->timepressed != 0){	
-			if ((signed int)(now - button->timepressed) < (signed int)NOPRESSTIME ) {
-				logdebug("No PRESS: %i", (signed int)(now - button->timepressed));
+	if ( level > 1 )
+		return;
+
+	for (; button < buttons + numberofbuttons; button++) {
+		if (button->pin == pin) {
+			bool bit = (level == 0)? 0 : 1;
+			now = tick / 1000;
+			bool presstype;
+			logdebug("%lu - %lu= %i  Pin Value=%i   Stored Value=%i", (unsigned long)now, (unsigned long)button->timepressed, (signed int)(now - button->timepressed), bit, button->value);
+
+			int increment = 0;
+			if ( (bit == button->pressed) && (button->timepressed == 0) ){	
+				button->timepressed = now;
 				increment = 0;
-			} else if ((signed int)(now - button->timepressed) > (signed int)button->long_press_time ) {
-				loginfo("Long PRESS: %i", (signed int)(now - button->timepressed));
-				button->value = bit;
-				presstype = LONGPRESS;
-				increment = 1;
-			} else {
-				loginfo("Short PRESS: %i", (signed int)(now - button->timepressed));
-				button->value = bit;
-				presstype = SHORTPRESS;
-				increment = 1;
+			} else if (button->timepressed != 0){	
+				if ((signed int)(now - button->timepressed) < (signed int)NOPRESSTIME ) {
+					logdebug("No PRESS: %i", (signed int)(now - button->timepressed));
+					increment = 0;
+				} else if ((signed int)(now - button->timepressed) > (signed int)button->long_press_time ) {
+					loginfo("Long PRESS: %i", (signed int)(now - button->timepressed));
+					button->value = bit;
+					presstype = LONGPRESS;
+					increment = 1;
+				} else {
+					loginfo("Short PRESS: %i", (signed int)(now - button->timepressed));
+					button->value = bit;
+					presstype = SHORTPRESS;
+					increment = 1;
+				}
+				button->timepressed = 0;
 			}
-			button->timepressed = 0;
+			if (button->callback && increment)
+				button->callback(button, increment, presstype);
 		}
-		if (button->callback && increment)
-			button->callback(button, increment, presstype);
-    }
+	}
 }
 
 //
@@ -133,9 +140,10 @@ struct button *setupbutton(int pin, button_callback_t callback, int resist, bool
         logerr("Maximum number of buttons exceded: %i", max_buttons);
         return NULL;
     }
-    
-    int edge = INT_EDGE_BOTH;  //Need to see both directions for button depressed time.
-    
+
+//Alert doesn't use the edge
+//    int edge = EITHER_EDGE;  //Need to see both directions for button depressed time.
+
     struct button *newbutton = buttons + numberofbuttons++;
     newbutton->pin = pin;
     newbutton->value = 0;
@@ -143,10 +151,11 @@ struct button *setupbutton(int pin, button_callback_t callback, int resist, bool
     newbutton->timepressed = 0;
     newbutton->pressed = pressed;
     newbutton->long_press_time = long_press_time;
-    pinMode(pin, INPUT);
-    pullUpDnControl(pin, resist);
-    wiringPiISR(pin,edge, updateButtons);
-    
+    gpioSetMode( pin, PI_INPUT);
+    gpioSetPullUpDown(pin, resist);
+    gpioGlitchFilter(pin, 50000);
+    gpioSetAlertFunc(pin, updateButtons);
+
     return newbutton;
 }
 
@@ -173,13 +182,13 @@ static struct encoder encoders[max_encoders];
 //  Depends on edge configuration
 //
 //
-void updateEncoders()
+void updateEncoders( int pin, int level, uint32_t tick)
 {
     struct encoder *encoder = encoders;
     for (; encoder < encoders + numberofencoders; encoder++)
     {
-        int MSB = digitalRead(encoder->pin_a);
-        int LSB = digitalRead(encoder->pin_b);
+        int MSB = gpioRead(encoder->pin_a);
+        int LSB = gpioRead(encoder->pin_b);
         
         int encoded = (MSB << 1) | LSB;
         int sum = (encoder->lastEncoded << 2) | encoded;
@@ -222,26 +231,29 @@ struct encoder *setupencoder(int pin_a,
         logerr("Maximum number of encodered exceded: %i", max_encoders);
         return NULL;
     }
-    
-    if (edge != INT_EDGE_FALLING && edge != INT_EDGE_RISING)
-        edge = INT_EDGE_BOTH;
-    
+
+    if (edge != FALLING_EDGE && edge != RISING_EDGE)
+        edge = EITHER_EDGE;
+
     struct encoder *newencoder = encoders + numberofencoders++;
     newencoder->pin_a = pin_a;
     newencoder->pin_b = pin_b;
     newencoder->value = 0;
     newencoder->lastEncoded = 0;
     newencoder->callback = callback;
-    
-    pinMode(pin_a, INPUT);
-    pinMode(pin_b, INPUT);
-    pullUpDnControl(pin_a, PUD_UP);
-    pullUpDnControl(pin_b, PUD_UP);
-    wiringPiISR(pin_a,edge, updateEncoders);
-    wiringPiISR(pin_b,edge, updateEncoders);
-    
+
+    gpioSetMode(pin_a, PI_INPUT);
+    gpioSetMode(pin_b, PI_INPUT);
+    gpioSetPullUpDown(pin_a, PI_PUD_UP);
+    gpioSetPullUpDown(pin_b, PI_PUD_UP);
+    gpioGlitchFilter(pin_a, 50);
+    gpioGlitchFilter(pin_b, 50);
+    gpioSetAlertFunc(pin_a, updateEncoders);
+    gpioSetAlertFunc(pin_b, updateEncoders);
+
     return newencoder;
 }
+
 
 //
 //
@@ -251,10 +263,12 @@ struct encoder *setupencoder(int pin_a,
 //
 void init_GPIO() {
     loginfo("Initializing GPIO");
-    wiringPiSetupGpio() ;
+    gpioInitialise() ;
 }
 
-
+void shutdown_GPIO() {
+	gpioTerminate();
+}
 
 
 

@@ -1,9 +1,8 @@
 CC = gcc
-CFLAGS  = -Wall -fPIC -std=gnu99 -s -O3 -I/usr/local/include -Wl,-rpath,/usr/local/lib
-LDFLAGS = -L./lib -Wl,-rpath,/usr/local/lib -lcurl -lwiringPi
-#STATIC_LDFLAGS = -lpthread -ldl -lwiringPi ./libs/libcurl.a /usr/local/lib/libssl.a /usr/local/lib/libcrypto.a /usr/lib/libz.a
-STATIC_LDFLAGS = -lpthread -ldl -lwiringPi ./libs/libcurl.a -L/usr/local/lib -lcrypto -lssl -lz
-
+CFLAGS  = -Wall -fPIC -std=gnu99 -s -O3 -I/usr/local/include -Wl,-rpath,/usr/local/lib -DCURL_STATCILIB
+LDFLAGS = -L./lib -Wl,-rpath,/usr/local/lib -lcurl -lpthread -lpigpio -lrt
+#STATIC_LDFLAGS = -lpthread -ldl -lrt -lssl -lcrypto -lz -lm -lidn2 -lto ./libs/libpigpio.a /usr/local/lib/libcurl.a
+STATIC_LDFLAGS = -lpthread -ldl -lrt ./libs/libpigpio.a -lcurl
 
 EXECUTABLE = sbpd
 EXECUTABLE-STATIC_CURL = sbpd-static

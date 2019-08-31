@@ -47,6 +47,7 @@
 //
 void init_GPIO();
 
+void shutdown_GPIO();
 //
 // Buttons and Rotary Encoders
 // Rotary Encoder taken from https://github.com/astine/rotaryencoder

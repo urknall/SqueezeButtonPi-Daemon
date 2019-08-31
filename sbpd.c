@@ -255,7 +255,9 @@ int main(int argc, char * argv[]) {
     //  Shutdown server communication
     //
     shutdown_comm();
-    
+
+    shutdown_GPIO();
+
     return 0;
 }
 

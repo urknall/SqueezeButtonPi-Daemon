@@ -39,7 +39,7 @@
 #include "sbpd.h"
 #include "control.h"
 #include "servercomm.h"
-#include <wiringPi.h>
+#include <pigpio.h>
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
@@ -178,8 +178,8 @@ int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_l
     }
    
     // Make sure resistor setting makes sense, or reset to default
-    if ( (resist != PUD_OFF) && (resist != PUD_DOWN) && (resist == PUD_UP) )
-        resist = PUD_UP;
+    if ( (resist != PI_PUD_OFF) && (resist != PI_PUD_DOWN) && (resist == PI_PUD_UP) )
+        resist = PI_PUD_UP;
 
     struct button * gpio_b = setupbutton(pin, button_press_cb, resist, (bool)(pressed == 0) ? 0 : 1, long_time);
 
@@ -191,10 +191,9 @@ int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_l
     button_ctrls[numberofbuttons].gpio_button = gpio_b;
     numberofbuttons++;
     loginfo("Button defined: Pin %d, BCM Resistor: %s, Short Type: %s, Short Fragment: %s , Long Type: %s, Long Fragment: %s, Long Press Time: %i",
-
             pin,
-            (resist == PUD_OFF) ? "both" :
-            (resist == PUD_DOWN) ? "down" : "up",
+            (resist == PI_PUD_OFF) ? "both" :
+            (resist == PI_PUD_DOWN) ? "down" : "up",
             (cmdtype == LMS) ? "LMS" :
             (cmdtype == SCRIPT) ? "Script" : "unused",
             fragment,
@@ -276,6 +275,7 @@ int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge) {
         encoder_ctrls[numberofencoders].min_time = 500;
     } 
     if ( fragment == NULL ) {
+        loginfo("Only VOLU or TRAC commands are valid for encoders\n");
         return -1;
     }
 
@@ -287,8 +287,8 @@ int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge) {
     numberofencoders++;
     loginfo("Rotary encoder defined: Pin %d, %d, Edge: %s, Fragment: \n%s",
             pin1, pin2,
-            ((edge != INT_EDGE_FALLING) && (edge != INT_EDGE_RISING)) ? "both" :
-            (edge == INT_EDGE_FALLING) ? "falling" : "rising",
+            ((edge != FALLING_EDGE) && (edge != RISING_EDGE)) ? "both" :
+            (edge == FALLING_EDGE) ? "falling" : "rising",
             fragment);
     return 0;
 }
