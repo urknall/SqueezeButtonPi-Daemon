@@ -78,7 +78,7 @@ static int sysloglevel = LOG_ALERT;
 const char *argp_program_version = USER_AGENT " " VERSION;
 const char *argp_program_bug_address = "<coolio@penguinlovesmusic.com>";
 static error_t parse_opt(int key, char *arg, struct argp_state *state);
-static error_t parse_arg();
+static error_t parse_arg( int pi );  //pass the pigpiod interface number
 //
 //  OPTIONS.  Field 1 in ARGP.
 //  Order of fields: {NAME, KEY, ARG, FLAGS, DOC, GROUP}.
@@ -187,18 +187,22 @@ int main(int argc, char * argv[]) {
             dup2(fd, STDERR_FILENO);
         }
     }
-    
-    //
-    //  Init GPIO
-    //  Done after daemonization becasue child process needs to have GPIO initilized
-    //
-    init_GPIO();
-    
+
+	//
+	//  Init GPIO
+	//  Done after daemonization becasue child process needs to have GPIO initilized
+	//
+	int pi_interface = init_GPIO();
+	if ( pi_interface < 0 ) {
+		logerr("Could not connect to pigpiod. Is it running?");
+		return -1;
+	}
+
     //
     //  Now parse GPIO elements
     //  Needed to initialize GPIO first
     //
-    error_t arg_err = parse_arg();
+    error_t arg_err = parse_arg( pi_interface );
     
 	if ( arg_err != 0 ) {
        return -2;
@@ -256,7 +260,10 @@ int main(int argc, char * argv[]) {
     //
     shutdown_comm();
 
-    shutdown_GPIO();
+
+	disconnect_button_ctrl();
+	disconnect_encoder_ctrl();
+	shutdown_GPIO( pi_interface );
 
     return 0;
 }
@@ -396,7 +403,7 @@ parse_opt (int key, char *arg, struct argp_state *state)
 //           CMD_LONG: Command to be used for a long button push, see above command list
 //           long_time: Number of millivoid seconds to define a long press
 //
-static error_t parse_arg() {
+static error_t parse_arg( int pi ) {
     for (int arg_num = 0; arg_num < arg_element_count; arg_num++) {
         char * arg = arg_elements[arg_num];
         {
@@ -422,7 +429,7 @@ static error_t parse_arg() {
                         logerr("Encoder argument error");
                         return ARGP_ERR_UNKNOWN;
                     }
-                    setup_encoder_ctrl(cmd, p1, p2, edge);
+                    setup_encoder_ctrl( pi, cmd, p1, p2, edge);
                 }
                     break;
                 case 'b': {
@@ -450,7 +457,7 @@ static error_t parse_arg() {
                         logerr("Button argument error");
                         return ARGP_ERR_UNKNOWN;
                     }
-                    setup_button_ctrl(cmd, pin, resist, pressed, cmd_long, long_time);
+                    setup_button_ctrl(pi, cmd, pin, resist, pressed, cmd_long, long_time);
                 }
                     break;
                     
@@ -498,7 +505,7 @@ void parse_config() {
         if (s==NULL)
             continue;
         else
-            strncpy (value, s, MAXLEN);
+            strncpy (value, s, MAXLEN-1);
         // Remove beginning and trailing whitespace
         trim (value);
 

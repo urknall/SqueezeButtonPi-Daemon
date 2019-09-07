@@ -39,7 +39,7 @@
 #include "sbpd.h"
 #include "control.h"
 #include "servercomm.h"
-#include <pigpio.h>
+#include <pigpiod_if2.h>
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
@@ -132,7 +132,7 @@ void button_press_cb(const struct button * button, int change, bool presstype) {
 //      cmd_long Command to be used for a long button push, see above command list
 //      long_time: Number of milliseconds to define a long press
 
-int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_long, int long_time) {
+int setup_button_ctrl(int pi, char * cmd, int pin, int resist, int pressed, char * cmd_long, int long_time) {
     char * fragment = NULL;
     char * fragment_long = NULL;
     char * script;
@@ -181,7 +181,7 @@ int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_l
     if ( (resist != PI_PUD_OFF) && (resist != PI_PUD_DOWN) && (resist == PI_PUD_UP) )
         resist = PI_PUD_UP;
 
-    struct button * gpio_b = setupbutton(pin, button_press_cb, resist, (bool)(pressed == 0) ? 0 : 1, long_time);
+    struct button * gpio_b = setupbutton(pi, pin, button_press_cb, resist, (bool)(pressed == 0) ? 0 : 1, long_time);
 
     button_ctrls[numberofbuttons].cmdtype = cmdtype;
     button_ctrls[numberofbuttons].shortfragment = fragment;
@@ -232,6 +232,17 @@ void handle_buttons(struct sbpd_server * server) {
     }
 }
 
+void disconnect_button_ctrl(){
+    int i;
+    for (int cnt = 0; cnt < numberofbuttons; cnt++) {
+        i = callback_cancel(button_ctrls[cnt].gpio_button->cb_id);
+        if (i == 0 ) {
+             loginfo("GPIO %d button callback cancelled.", button_ctrls[cnt].gpio_button->pin);
+        } else {
+             loginfo("Error cancelling callback for GPIO %d.", button_ctrls[cnt].gpio_button->pin);
+        }
+    }
+}
 
 //
 //  Encoder interrupt callback
@@ -256,7 +267,7 @@ void encoder_rotate_cb(const struct encoder * encoder, long change) {
 //                  0, 3 - both
 //
 //
-int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge) {
+int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int edge) {
     char * fragment = NULL;
     if (strlen(cmd) > 4)
         return -1;
@@ -279,7 +290,7 @@ int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge) {
         return -1;
     }
 
-    struct encoder * gpio_e = setupencoder(pin1, pin2, encoder_rotate_cb, edge);
+    struct encoder * gpio_e = setupencoder(pi, pin1, pin2, encoder_rotate_cb, edge, ENCODER_MODE_STEP);
     encoder_ctrls[numberofencoders].fragment = fragment;
     encoder_ctrls[numberofencoders].gpio_encoder = gpio_e;
     encoder_ctrls[numberofencoders].last_value = 0;
@@ -352,6 +363,24 @@ void handle_encoders(struct sbpd_server * server) {
     }
 }
 
+void disconnect_encoder_ctrl(){
+    int i;
+    for (int cnt = 0; cnt < numberofencoders; cnt++) {
+        i = callback_cancel(encoder_ctrls[cnt].gpio_encoder->cba_id);
+        if (i == 0 ) {
+             loginfo("GPIO %d encoder callback cancelled.", encoder_ctrls[cnt].gpio_encoder->pin_a);
+        } else {
+             loginfo("Error cancelling callback for GPIO %d.", encoder_ctrls[cnt].gpio_encoder->pin_a);
+        }
+        i = callback_cancel(encoder_ctrls[cnt].gpio_encoder->cbb_id);
+        if (i == 0 ) {
+             loginfo("GPIO %d encoder callback cancelled.", encoder_ctrls[cnt].gpio_encoder->pin_b);
+        } else {
+             loginfo("Error cancelling callback for GPIO %d.", encoder_ctrls[cnt].gpio_encoder->pin_b);
+        }
+
+    }
+}
 
 
 

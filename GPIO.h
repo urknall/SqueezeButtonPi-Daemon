@@ -42,12 +42,13 @@
 //
 //
 //  Init GPIO functionality
-//  Essentially just initialized WiringPi to use GPIO pin numbering
+//  Connect to the pigpiod interface.
 //
 //
-void init_GPIO();
 
-void shutdown_GPIO();
+int init_GPIO();
+
+void shutdown_GPIO( int pi );
 //
 // Buttons and Rotary Encoders
 // Rotary Encoder taken from https://github.com/astine/rotaryencoder
@@ -72,12 +73,14 @@ struct button;
 typedef void (*button_callback_t)(const struct button * button, int change, bool presstype);
 
 struct button {
+    int pi;
     int pin;
     volatile bool value;
     button_callback_t callback;
     uint32_t timepressed;
     bool pressed;
     int long_press_time;
+    int cb_id;
 };
 
 //
@@ -95,12 +98,12 @@ struct button {
 //           The pointer will be NULL is the function failed for any reason
 //
 //
-struct button *setupbutton(int pin,
-                           button_callback_t callback,
+struct button *setupbutton(int pi,
+                           int pin,
+                           button_callback_t b_callback,
                            int resist,
                            bool pressed,
                            int long_press_time);
-
 
 struct encoder;
 
@@ -113,11 +116,15 @@ typedef void (*rotaryencoder_callback_t)(const struct encoder * encoder, long ch
 
 struct encoder
 {
+    int pi;
     int pin_a;
     int pin_b;
     volatile long value;
     volatile int lastEncoded;
     rotaryencoder_callback_t callback;
+    int mode;
+    int cba_id;
+    int cbb_id;
 };
 
 //
@@ -135,12 +142,52 @@ struct encoder
 //           The pointer will be NULL is the function failed for any reason
 //
 //
-struct encoder *setupencoder(int pin_a,
+struct encoder *setupencoder(int pi,
+                             int pin_a,
                              int pin_b,
                              rotaryencoder_callback_t callback,
-                             int edge);
+                             int edge,
+                             int mode);
+
+#define ENCODER_MODE_DETENT 0
+#define ENCODER_MODE_STEP   1
+
+/*
+
+RED starts a rotary encoder on Pi pi with GPIO gpioA,
+GPIO gpioB, mode mode, and callback cb_func.  The mode
+determines whether the four steps in each detent are
+reported as changes or just the detents.
+
+If cb_func in not null it will be called at each position
+change with the new position.
+
+The current position can be read with RED_get_position and
+set with RED_set_position.
+
+Mechanical encoders may suffer from switch bounce.
+RED_set_glitch_filter may be used to filter out edges
+shorter than glitch microseconds.  By default a glitch
+filter of 1000 microseconds is used.
+
+At program end the rotary encoder should be cancelled using
+RED_cancel.  This releases system resources.
 
 
+RED_t *RED                   (int pi,
+                              int gpioA,
+                              int gpioB,
+                              int mode,
+                              RED_CB_t cb_func);
+
+void   RED_cancel            (RED_t *renc);
+
+void   RED_set_glitch_filter (RED_t *renc, int glitch);
+
+void   RED_set_position      (RED_t *renc, int position);
+
+int    RED_get_position      (RED_t *renc);
+*/
 
 
 

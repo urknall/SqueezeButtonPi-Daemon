@@ -38,7 +38,7 @@
 #include "GPIO.h"
 #include "sbpd.h"
 
-#include <pigpio.h>
+#include <pigpiod_if2.h>
 
 //
 //  Configured buttons
@@ -74,15 +74,14 @@ uint32_t gettime_ms(void) {
 //  calls callback if state change detected.
 //
 //
-//gpioAlertFunc_t updateButtons()
-void updateButtons( int pin, int level, uint32_t tick)
-{
+//CBFunc_t updateButtons()
+CBFunc_t updateButtons( int pi, unsigned pin, unsigned  level, uint32_t tick){
 	uint32_t now;
 //	now = gettime_ms();
 	struct button *button = buttons;
 
 	if ( level > 1 )
-		return;
+		return NULL;
 
 	for (; button < buttons + numberofbuttons; button++) {
 		if (button->pin == pin) {
@@ -116,6 +115,7 @@ void updateButtons( int pin, int level, uint32_t tick)
 				button->callback(button, increment, presstype);
 		}
 	}
+	return NULL;
 }
 
 //
@@ -133,7 +133,7 @@ void updateButtons( int pin, int level, uint32_t tick)
 //           The pointer will be NULL is the function failed for any reason
 //
 //
-struct button *setupbutton(int pin, button_callback_t callback, int resist, bool pressed, int long_press_time)
+struct button *setupbutton(int pi, int pin, button_callback_t b_callback, int resist, bool pressed, int long_press_time)
 {
     if (numberofbuttons > max_buttons)
     {
@@ -142,19 +142,20 @@ struct button *setupbutton(int pin, button_callback_t callback, int resist, bool
     }
 
 //Alert doesn't use the edge
-//    int edge = EITHER_EDGE;  //Need to see both directions for button depressed time.
+    int edge = EITHER_EDGE;  //Need to see both directions for button depressed time.
 
     struct button *newbutton = buttons + numberofbuttons++;
+    newbutton->pi = pi;
     newbutton->pin = pin;
     newbutton->value = 0;
-    newbutton->callback = callback;
+    newbutton->callback = b_callback;
     newbutton->timepressed = 0;
     newbutton->pressed = pressed;
     newbutton->long_press_time = long_press_time;
-    gpioSetMode( pin, PI_INPUT);
-    gpioSetPullUpDown(pin, resist);
-    gpioGlitchFilter(pin, 50000);
-    gpioSetAlertFunc(pin, updateButtons);
+    set_mode( pi,  pin, PI_INPUT);
+    set_pull_up_down(pi, pin, resist);
+    set_glitch_filter(pi, pin, 50000);
+    newbutton->cb_id = callback(pi, (unsigned) pin, (unsigned)edge, (CBFunc_t)updateButtons);
 
     return newbutton;
 }
@@ -182,13 +183,13 @@ static struct encoder encoders[max_encoders];
 //  Depends on edge configuration
 //
 //
-void updateEncoders( int pin, int level, uint32_t tick)
+CBFunc_t updateEncoders( int pi, unsigned pin, unsigned level, uint32_t tick)
 {
     struct encoder *encoder = encoders;
     for (; encoder < encoders + numberofencoders; encoder++)
     {
-        int MSB = gpioRead(encoder->pin_a);
-        int LSB = gpioRead(encoder->pin_b);
+        int MSB = gpio_read(encoder->pi, encoder->pin_a);
+        int LSB = gpio_read(encoder->pi, encoder->pin_b);
         
         int encoded = (MSB << 1) | LSB;
         int sum = (encoder->lastEncoded << 2) | encoded;
@@ -204,6 +205,7 @@ void updateEncoders( int pin, int level, uint32_t tick)
         if (encoder->callback)
             encoder->callback(encoder, increment);
     }
+	return NULL;
 }
 
 //
@@ -221,10 +223,12 @@ void updateEncoders( int pin, int level, uint32_t tick)
 //           The pointer will be NULL is the function failed for any reason
 //
 //
-struct encoder *setupencoder(int pin_a,
+struct encoder *setupencoder(int pi,
+                             int pin_a,
                              int pin_b,
-                             rotaryencoder_callback_t callback,
-                             int edge)
+                             rotaryencoder_callback_t e_callback,
+                             int edge,
+                             int mode)
 {
     if (numberofencoders > max_encoders)
     {
@@ -236,38 +240,57 @@ struct encoder *setupencoder(int pin_a,
         edge = EITHER_EDGE;
 
     struct encoder *newencoder = encoders + numberofencoders++;
+    newencoder->pi = pi;
     newencoder->pin_a = pin_a;
     newencoder->pin_b = pin_b;
     newencoder->value = 0;
     newencoder->lastEncoded = 0;
-    newencoder->callback = callback;
+    newencoder->callback = e_callback;
+    newencoder->mode = mode;
 
-    gpioSetMode(pin_a, PI_INPUT);
-    gpioSetMode(pin_b, PI_INPUT);
-    gpioSetPullUpDown(pin_a, PI_PUD_UP);
-    gpioSetPullUpDown(pin_b, PI_PUD_UP);
-    gpioGlitchFilter(pin_a, 50);
-    gpioGlitchFilter(pin_b, 50);
-    gpioSetAlertFunc(pin_a, updateEncoders);
-    gpioSetAlertFunc(pin_b, updateEncoders);
+    set_mode(pi, pin_a, PI_INPUT);
+    set_mode(pi, pin_b, PI_INPUT);
+    set_pull_up_down(pi, pin_a, PI_PUD_UP);
+    set_pull_up_down(pi, pin_b, PI_PUD_UP);
+    set_glitch_filter(pi, pin_a, 50);
+    set_glitch_filter(pi, pin_b, 50);
+    newencoder->cba_id = callback(pi, (unsigned) pin_a, (unsigned) edge, (CBFunc_t)updateEncoders);
+    newencoder->cbb_id = callback(pi, (unsigned) pin_b, (unsigned) edge, (CBFunc_t)updateEncoders);
 
     return newencoder;
 }
 
+/*
+   if (pi >= 0)
+   {
+      renc = RED(pi, optGpioA, optGpioB, optMode, cbf);
+      RED_set_glitch_filter(renc, optGlitch);
+
+      if (optSeconds) sleep(optSeconds);
+      else while(1) sleep(60);
+
+      RED_cancel(renc);
+
+
+   }
+*/
 
 //
 //
 //  Init GPIO functionality
-//  Essentially just initialized WiringPi to use GPIO pin numbering
+//  Connect to the pigpiod interface.
 //
 //
-void init_GPIO() {
-    loginfo("Initializing GPIO");
-    gpioInitialise() ;
+
+int init_GPIO() {
+	loginfo("Initializing GPIO");
+	int pi = pigpio_start( NULL, NULL); /* Connect to Pi. NULL means the local pigpiod*/
+	return pi;
 }
 
-void shutdown_GPIO() {
-	gpioTerminate();
+void shutdown_GPIO( int pi) {
+	loginfo("Disconnecting from pigpiod");
+	pigpio_stop(pi);
 }
 
 
