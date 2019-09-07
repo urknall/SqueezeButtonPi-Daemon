@@ -113,16 +113,16 @@ static char doc[] = "sbpd - SqueezeButtinPiDaemon is a button and rotary encoder
 At least one needs to be specified for the daemon to do anything useful\n\
 Arguments are a comma-separated list of configuration parameters:\n\
 For rotary encoders (one, volume only):\n\
-    e,pin1,pin2,CMD[,edge]\n\
+    e,pin1,pin2,CMD[,mode]\n\
         \"e\" for \"Encoder\"\n\
         p1, p2: GPIO PIN numbers in BCM-notation\n\
         CMD: Command. one of. \n\
                     VOLU for Volume\n\
                     TRAC for Prev/Next track\n\
-        edge: Optional. one of\n\
-                1 - falling edge\n\
-                2 - rising edge\n\
-                0, 3 - both\n\
+        mode: Optional. one of\n\
+                0 - Detent mode - Assumes 1 dial click is 4 steps.\n\
+                1 - Step mode (default)\n\
+\n\
 For buttons:\n\
     b,pin,CMD[,resist,pressed]\n\
         \"b\" for \"Button\"\n\
@@ -260,7 +260,6 @@ int main(int argc, char * argv[]) {
     //
     shutdown_comm();
 
-
 	disconnect_button_ctrl();
 	disconnect_encoder_ctrl();
 	shutdown_GPIO( pi_interface );
@@ -377,10 +376,9 @@ parse_opt (int key, char *arg, struct argp_state *state)
 //          p1, p2: GPIO PIN numbers in BCM-notation
 //          CMD:        VOLU for Volume
 //                      TRAC for Playlist previous/next
-//          edge: Optional. one of
-//                  1 - falling edge
-//                  2 - rising edge
-//                  0, 3 - both
+//          mode: Optional. one of
+//                0 - Detent mode - Assumes 1 dial click is 4 steps.
+//                1 - Step mode (default)
 //  For buttons:
 //      b,pin,CMD[,resist,pressed,CMD_LONG]
 //          "b" for "Button"
@@ -422,14 +420,14 @@ static error_t parse_arg( int pi ) {
                         p2 = (int)strtol(string, NULL, 10);
                     char * cmd = strtok(NULL, ",");
                     string = strtok(NULL, ",");
-                    int edge = 0;
+                    int mode = 1;
                     if (string)
-                        edge = (int)strtol(string, NULL, 10);
+                        mode = (int)strtol(string, NULL, 10);
                     if ( (p1 == 0) | (p2 == 0) | (cmd == NULL) ) {
                         logerr("Encoder argument error");
                         return ARGP_ERR_UNKNOWN;
                     }
-                    setup_encoder_ctrl( pi, cmd, p1, p2, edge);
+                    setup_encoder_ctrl( pi, cmd, p1, p2, mode);
                 }
                     break;
                 case 'b': {

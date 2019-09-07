@@ -120,12 +120,17 @@ struct encoder
     int pin_a;
     int pin_b;
     volatile long value;
+    volatile long detents;
     volatile int lastEncoded;
     rotaryencoder_callback_t callback;
     int mode;
     int cba_id;
     int cbb_id;
+    int levA;
+    int levB;
+    int glitch;
 };
+
 
 //
 //
@@ -136,8 +141,8 @@ struct encoder
 //  Parameters:
 //      pin_a, pin_b: GPIO-Pins used in BCM numbering scheme
 //      callback: callback function to be called when encoder state changed
-//      edge: edge to be used for trigger events,
-//            one of INT_EDGE_RISING, INT_EDGE_FALLING or INT_EDGE_BOTH (the default)
+//      mode: operate in ENCODER_MODE_DETENT or , ENCODER_MODE_STEP
+//
 //  Returns: pointer to the new encoder structure
 //           The pointer will be NULL is the function failed for any reason
 //
@@ -146,49 +151,9 @@ struct encoder *setupencoder(int pi,
                              int pin_a,
                              int pin_b,
                              rotaryencoder_callback_t callback,
-                             int edge,
                              int mode);
 
 #define ENCODER_MODE_DETENT 0
 #define ENCODER_MODE_STEP   1
-
-/*
-
-RED starts a rotary encoder on Pi pi with GPIO gpioA,
-GPIO gpioB, mode mode, and callback cb_func.  The mode
-determines whether the four steps in each detent are
-reported as changes or just the detents.
-
-If cb_func in not null it will be called at each position
-change with the new position.
-
-The current position can be read with RED_get_position and
-set with RED_set_position.
-
-Mechanical encoders may suffer from switch bounce.
-RED_set_glitch_filter may be used to filter out edges
-shorter than glitch microseconds.  By default a glitch
-filter of 1000 microseconds is used.
-
-At program end the rotary encoder should be cancelled using
-RED_cancel.  This releases system resources.
-
-
-RED_t *RED                   (int pi,
-                              int gpioA,
-                              int gpioB,
-                              int mode,
-                              RED_CB_t cb_func);
-
-void   RED_cancel            (RED_t *renc);
-
-void   RED_set_glitch_filter (RED_t *renc, int glitch);
-
-void   RED_set_position      (RED_t *renc, int position);
-
-int    RED_get_position      (RED_t *renc);
-*/
-
-
 
 #endif /* GPIO_h */

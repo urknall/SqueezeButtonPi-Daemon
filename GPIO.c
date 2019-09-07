@@ -141,7 +141,6 @@ struct button *setupbutton(int pi, int pin, button_callback_t b_callback, int re
         return NULL;
     }
 
-//Alert doesn't use the edge
     int edge = EITHER_EDGE;  //Need to see both directions for button depressed time.
 
     struct button *newbutton = buttons + numberofbuttons++;
@@ -166,6 +165,9 @@ struct button *setupbutton(int pi, int pin, button_callback_t b_callback, int re
 // Rotary Encoder taken from https://github.com/astine/rotaryencoder
 // http://theatticlight.net/posts/Reading-a-Rotary-Encoder-from-a-Raspberry-Pi/
 //
+// Updated to encoder control based on 
+// http://abyz.me.uk/rpi/pigpio/code/rotary_encoder_py.zip
+//
 //
 //  Configured encoders
 //
@@ -176,37 +178,75 @@ static int numberofencoders = 0;
 //
 static struct encoder encoders[max_encoders];
 
-//
-//
-//  Encoder handler function
-//  Called by the GPIO interrupt when encoder is rotated
-//  Depends on edge configuration
-//
-//
-CBFunc_t updateEncoders( int pi, unsigned pin, unsigned level, uint32_t tick)
+
+/*
+
+             +---------+         +---------+      0
+             |         |         |         |
+   A         |         |         |         |
+             |         |         |         |
+   +---------+         +---------+         +----- 1
+
+       +---------+         +---------+            0
+       |         |         |         |
+   B   |         |         |         |
+       |         |         |         |
+   ----+         +---------+         +---------+  1
+
+*/
+static int transits[16]=
 {
-    struct encoder *encoder = encoders;
-    for (; encoder < encoders + numberofencoders; encoder++)
-    {
-        int MSB = gpio_read(encoder->pi, encoder->pin_a);
-        int LSB = gpio_read(encoder->pi, encoder->pin_b);
-        
-        int encoded = (MSB << 1) | LSB;
-        int sum = (encoder->lastEncoded << 2) | encoded;
-        
-        int increment = 0;
-        
-        if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) increment = 1;
-        if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) increment = -1;
-        
-        encoder->value += increment;
-        
-        encoder->lastEncoded = encoded;
-        if (encoder->callback)
-            encoder->callback(encoder, increment);
-    }
-	return NULL;
+/* 0000 0001 0010 0011 0100 0101 0110 0111 */
+      0,  -1,   1,   0,   1,   0,   0,  -1,
+/* 1000 1001 1010 1011 1100 1101 1110 1111 */
+     -1,   0,   0,   1,   0,   1,  -1,   0
+};
+
+static void updateEncoders(
+   int pi, unsigned gpio, unsigned level, uint32_t tick, void *enc)
+{
+	struct encoder *encoder = enc;
+	long newState, inc, detent;
+
+	if (level != PI_TIMEOUT)
+	{
+		if (gpio == encoder->pin_a)
+			encoder->levA = level;
+		else
+			encoder->levB = level;
+
+		newState = encoder->levA << 1 | encoder->levB;
+
+		inc = transits[encoder->lastEncoded << 2 | newState];
+
+/*	Since we are running in a polling mode, just update the encoder value and quit.
+	no need to call the encoders callback.
+		if (inc)
+		{
+			encoder->lastEncoded = newState;
+
+			detent = encoder->value / 4;
+
+			encoder->value += inc;
+
+			if (encoder->callback)
+			{
+				if (encoder->mode == ENCODER_MODE_DETENT)
+				{
+					if (detent != (encoder->value / 4)) (encoder->callback)(encoder, encoder->value / 4);
+				}
+				else (encoder->callback)(encoder, encoder->value);
+			}
+		}*/
+		if (inc){
+			encoder->lastEncoded = newState;
+			encoder->value += inc;
+			encoder->detents = encoder->value / 4;
+		}
+	}
 }
+
+
 
 //
 //
@@ -217,8 +257,8 @@ CBFunc_t updateEncoders( int pi, unsigned pin, unsigned level, uint32_t tick)
 //  Parameters:
 //      pin_a, pin_b: GPIO-Pins used in BCM numbering scheme
 //      callback: callback function to be called when encoder state changed
-//      edge: edge to be used for trigger events,
-//            one of INT_EDGE_RISING, INT_EDGE_FALLING or INT_EDGE_BOTH (the default)
+//      mode: operate in ENCODER_MODE_DETENT or , ENCODER_MODE_STEP
+//
 //  Returns: pointer to the new encoder structure
 //           The pointer will be NULL is the function failed for any reason
 //
@@ -227,7 +267,6 @@ struct encoder *setupencoder(int pi,
                              int pin_a,
                              int pin_b,
                              rotaryencoder_callback_t e_callback,
-                             int edge,
                              int mode)
 {
     if (numberofencoders > max_encoders)
@@ -236,44 +275,33 @@ struct encoder *setupencoder(int pi,
         return NULL;
     }
 
-    if (edge != FALLING_EDGE && edge != RISING_EDGE)
-        edge = EITHER_EDGE;
-
     struct encoder *newencoder = encoders + numberofencoders++;
     newencoder->pi = pi;
     newencoder->pin_a = pin_a;
     newencoder->pin_b = pin_b;
     newencoder->value = 0;
+    newencoder->detents = 0;
     newencoder->lastEncoded = 0;
     newencoder->callback = e_callback;
     newencoder->mode = mode;
+    newencoder->glitch = 1000;
+    newencoder->levA = 0;
+    newencoder->levB = 0;
 
     set_mode(pi, pin_a, PI_INPUT);
     set_mode(pi, pin_b, PI_INPUT);
     set_pull_up_down(pi, pin_a, PI_PUD_UP);
     set_pull_up_down(pi, pin_b, PI_PUD_UP);
-    set_glitch_filter(pi, pin_a, 50);
-    set_glitch_filter(pi, pin_b, 50);
-    newencoder->cba_id = callback(pi, (unsigned) pin_a, (unsigned) edge, (CBFunc_t)updateEncoders);
-    newencoder->cbb_id = callback(pi, (unsigned) pin_b, (unsigned) edge, (CBFunc_t)updateEncoders);
+    set_glitch_filter(pi, pin_a, newencoder->glitch);
+    set_glitch_filter(pi, pin_b, newencoder->glitch);
+
+    newencoder->lastEncoded = (gpio_read(pi, pin_a) << 1) | gpio_read(pi, pin_b);
+
+    newencoder->cba_id = callback_ex(pi, (unsigned) pin_a, EITHER_EDGE, (CBFuncEx_t)updateEncoders, newencoder);
+    newencoder->cbb_id = callback_ex(pi, (unsigned) pin_b, EITHER_EDGE, (CBFuncEx_t)updateEncoders, newencoder);
 
     return newencoder;
 }
-
-/*
-   if (pi >= 0)
-   {
-      renc = RED(pi, optGpioA, optGpioB, optMode, cbf);
-      RED_set_glitch_filter(renc, optGlitch);
-
-      if (optSeconds) sleep(optSeconds);
-      else while(1) sleep(60);
-
-      RED_cancel(renc);
-
-
-   }
-*/
 
 //
 //
@@ -292,7 +320,3 @@ void shutdown_GPIO( int pi) {
 	loginfo("Disconnecting from pigpiod");
 	pigpio_stop(pi);
 }
-
-
-
-

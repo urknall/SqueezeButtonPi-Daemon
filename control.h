@@ -103,12 +103,11 @@ struct encoder_ctrl
 //          Can be NULL for volume or actually anything since it's ignored
 //      pin1: the GPIO-Pin-Number for the first pin used
 //      pin2: the GPIO-Pin-Number for the second pin used
-//      edge: one of
-//                  1 - falling edge
-//                  2 - rising edge
-//                  0, 3 - both
+//      mode: one of
+//                  0 - ENCODER_MODE_DETENT
+//                  1 - ENCODER_MODE_STEP  <default>
 //
-int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int edge);
+int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int mode);
 
 //
 //  Polling function: handle encoders

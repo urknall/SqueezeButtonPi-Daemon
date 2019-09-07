@@ -261,13 +261,13 @@ void encoder_rotate_cb(const struct encoder * encoder, long change) {
 //          Can be NULL for volume
 //      pin1: the GPIO-Pin-Number for the first pin used
 //      pin2: the GPIO-Pin-Number for the second pin used
-//      edge: one of
-//                  1 - falling edge
-//                  2 - rising edge
-//                  0, 3 - both
+//      mode: one of
+//                  0 - ENCODER_MODE_DETENT
+//                  1 - ENCODER_MODE_STEP  <default>
+
 //
 //
-int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int edge) {
+int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int mode) {
     char * fragment = NULL;
     if (strlen(cmd) > 4)
         return -1;
@@ -290,16 +290,15 @@ int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int edge) {
         return -1;
     }
 
-    struct encoder * gpio_e = setupencoder(pi, pin1, pin2, encoder_rotate_cb, edge, ENCODER_MODE_STEP);
+    struct encoder * gpio_e = setupencoder(pi, pin1, pin2, encoder_rotate_cb, mode);
     encoder_ctrls[numberofencoders].fragment = fragment;
     encoder_ctrls[numberofencoders].gpio_encoder = gpio_e;
     encoder_ctrls[numberofencoders].last_value = 0;
     encoder_ctrls[numberofencoders].last_time = 0;
     numberofencoders++;
-    loginfo("Rotary encoder defined: Pin %d, %d, Edge: %s, Fragment: \n%s",
+    loginfo("Rotary encoder defined: Pin %d, %d, Mode: %s, Fragment: \n%s",
             pin1, pin2,
-            ((edge != FALLING_EDGE) && (edge != RISING_EDGE)) ? "both" :
-            (edge == FALLING_EDGE) ? "falling" : "rising",
+            (mode == ENCODER_MODE_DETENT) ? "Detent" : "Step",
             fragment);
     return 0;
 }
@@ -321,13 +320,20 @@ void handle_encoders(struct sbpd_server * server) {
     //logdebug("Polling encoders");
 
     int command = LMS;
+    long current_value;
 
     for (int cnt = 0; cnt < numberofencoders; cnt++) {
         //
         //  build volume delta
         //  ignore if > 100: overflow
         //
-        int delta = (int)(encoder_ctrls[cnt].gpio_encoder->value - encoder_ctrls[cnt].last_value);
+        // Detent mode is simply value / 4
+        if ( encoder_ctrls[cnt].gpio_encoder->mode == ENCODER_MODE_DETENT )
+            current_value = encoder_ctrls[cnt].gpio_encoder->detents;
+        else
+            current_value = encoder_ctrls[cnt].gpio_encoder->value;
+
+        int delta = (int)(current_value - encoder_ctrls[cnt].last_value);
         if (delta > 100)
             delta = 0;
         if (delta != 0) {
@@ -338,13 +344,15 @@ void handle_encoders(struct sbpd_server * server) {
                     encoder_ctrls[cnt].gpio_encoder->pin_b,
                     delta,
                     (encoder_ctrls[cnt].min_time) );
-                encoder_ctrls[cnt].last_value = encoder_ctrls[cnt].gpio_encoder->value;
+                encoder_ctrls[cnt].last_value = current_value;
                 return;
             }
 
-            loginfo("Encoder on GPIO %d, %d value change: %d",
+            loginfo("Encoder on GPIO %d, %d - value: %d, detents: %d, change: %d",
                     encoder_ctrls[cnt].gpio_encoder->pin_a,
                     encoder_ctrls[cnt].gpio_encoder->pin_b,
+                    encoder_ctrls[cnt].gpio_encoder->value,
+                    encoder_ctrls[cnt].gpio_encoder->detents,
                     delta);
 
             char fragment[50];
@@ -356,7 +364,7 @@ void handle_encoders(struct sbpd_server * server) {
                      encoder_ctrls[cnt].fragment, prefix, abs(delta));
 
             if (send_command(server, command, fragment)) {
-                encoder_ctrls[cnt].last_value = encoder_ctrls[cnt].gpio_encoder->value;
+                encoder_ctrls[cnt].last_value = current_value;
                 encoder_ctrls[cnt].last_time = time; // chatter filter
             }
         }
@@ -378,7 +386,6 @@ void disconnect_encoder_ctrl(){
         } else {
              loginfo("Error cancelling callback for GPIO %d.", encoder_ctrls[cnt].gpio_encoder->pin_b);
         }
-
     }
 }
 

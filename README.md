@@ -68,10 +68,10 @@ Arguments are a comma-separated list of configuration parameters:
             "e" for "Encoder"
             p1, p2: GPIO PIN numbers in BCM-notation
             CMD: Command. Unused for encoders, always VOLM for Volume
-            edge: Optional. one of
-                  1 - falling edge
-                  2 - rising edge
-                  0, 3 - both
+            mode: Optional. one of
+                0 - Detent mode - Assumes 1 dial click is 4 steps.
+                1 - Step mode (default)
+
     For buttons: 
         b,pin,CMD[,resist,pressed,CMD_LONG,long_time]
             "b" for "Button"
