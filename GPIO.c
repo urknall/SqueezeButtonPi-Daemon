@@ -206,7 +206,7 @@ static void updateEncoders(
    int pi, unsigned gpio, unsigned level, uint32_t tick, void *enc)
 {
 	struct encoder *encoder = enc;
-	long newState, inc, detent;
+	long newState, inc;
 
 	if (level != PI_TIMEOUT)
 	{
@@ -241,12 +241,10 @@ static void updateEncoders(
 		if (inc){
 			encoder->lastEncoded = newState;
 			encoder->value += inc;
-			encoder->detents = encoder->value / 4;
+			encoder->detents = encoder->value / encoder->mode;
 		}
 	}
 }
-
-
 
 //
 //

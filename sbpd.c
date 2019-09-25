@@ -51,6 +51,8 @@
 #include "discovery.h"
 #include "servercomm.h"
 #include "control.h"
+#include <linux/uinput.h>
+#include "uinput.h"
 
 //
 //  Server configuration
@@ -112,16 +114,18 @@ static char args_doc[] = "[e,pin1,pin2,CMD,edge] [b,pin,CMD,resist,pressed...]";
 static char doc[] = "sbpd - SqueezeButtinPiDaemon is a button and rotary encoder handling daemon for Raspberry Pi and a Squeezebox player software.\nsbpd connects to a Squeezebox server and sends the configured control commands on behalf of a player running on the RPi.\n<C>2017 Joerg Schwieder/PenguinLovesMusic.com\n\n\
 At least one needs to be specified for the daemon to do anything useful\n\
 Arguments are a comma-separated list of configuration parameters:\n\
-For rotary encoders (one, volume only):\n\
+\n\
+For rotary encoders):\n\
     e,pin1,pin2,CMD[,mode]\n\
         \"e\" for \"Encoder\"\n\
         p1, p2: GPIO PIN numbers in BCM-notation\n\
         CMD: Command. one of. \n\
                     VOLU for Volume\n\
                     TRAC for Prev/Next track\n\
+                    KEY:<linux key_name>-<linux key_name>.\n\
         mode: Optional. one of\n\
-                0 - Detent mode - Assumes 1 dial click is 4 steps.\n\
                 1 - Step mode (default)\n\
+                2-9 - Detent mode - Assumes 1 dial click is x steps.\n\
 \n\
 For buttons:\n\
     b,pin,CMD[,resist,pressed]\n\
@@ -137,6 +141,8 @@ For buttons:\n\
                     use -f option, ref:sbpd_commands.cfg \n\
               Command type SCRIPT.\n\
                     SCRIPT:/path/to/shell/script.sh\n\
+              Command type KEY.\n\
+                    KEY:<linux key_name>.\n\
          resist: Optional. one of\n\
               0 - Internal resistor off\n\
               1 - pull down         - input puts 3v on GPIO pin\n\
@@ -158,7 +164,6 @@ int main(int argc, char * argv[]) {
     //
     //  Parse Arguments
     //
-
     argp_parse (&argp, argc, argv, 0, 0, 0);
     //
     //  Parse command config file
@@ -231,6 +236,14 @@ int main(int argc, char * argv[]) {
     //
     //  Initialize server communication
     //
+	if (keyboard_inuse == true) {
+		loginfo("Starting Keyboard Device");
+		if (init_uinput()){
+			logerr("Error opening uinput device, have you ran \"modprobe uinput.\"");
+			stop_signal = 1;
+		}
+	}
+
     init_comm(MAC);
     
     //
@@ -238,7 +251,8 @@ int main(int argc, char * argv[]) {
     // Main Loop
     //
     //
-    loginfo("Starting main loop polling");
+	
+	loginfo("Starting main loop polling");
     while( !stop_signal ) {
         //
         //  Poll the server discovery
@@ -259,6 +273,9 @@ int main(int argc, char * argv[]) {
     //  Shutdown server communication
     //
     shutdown_comm();
+	if (keyboard_inuse) { 
+		disconnect_uinput();
+	}
 
 	disconnect_button_ctrl();
 	disconnect_encoder_ctrl();
@@ -371,14 +388,15 @@ parse_opt (int key, char *arg, struct argp_state *state)
 //
 //  Arguments are a comma-separated list of configuration parameters:
 //  For rotary encoders (one, volume only):
-//      e,pin1,pin2,CMD[,edge]
+//      e,pin1,pin2,CMD[,mode]
 //          "e" for "Encoder"
 //          p1, p2: GPIO PIN numbers in BCM-notation
 //          CMD:        VOLU for Volume
 //                      TRAC for Playlist previous/next
+//                      KEY:103-108   //Keyboard keys for up and down
 //          mode: Optional. one of
-//                0 - Detent mode - Assumes 1 dial click is 4 steps.
 //                1 - Step mode (default)
+//                <2-9> - Detent mode - Assumes 1 dial click is x steps.
 //  For buttons:
 //      b,pin,CMD[,resist,pressed,CMD_LONG]
 //          "b" for "Button"
@@ -416,12 +434,12 @@ static error_t parse_arg( int pi ) {
                         p1 = (int)strtol(string, NULL, 10);
                     string = strtok(NULL, ",");
                     int p2 = 0;
-                    if (string)
+					if (string)
                         p2 = (int)strtol(string, NULL, 10);
                     char * cmd = strtok(NULL, ",");
-                    string = strtok(NULL, ",");
+					string = strtok(NULL, ",");
                     int mode = 1;
-                    if (string)
+					if (string)
                         mode = (int)strtol(string, NULL, 10);
                     if ( (p1 == 0) | (p2 == 0) | (cmd == NULL) ) {
                         logerr("Encoder argument error");

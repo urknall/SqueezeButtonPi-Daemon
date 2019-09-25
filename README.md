@@ -35,12 +35,12 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Dependencies
 
-SqueezeButtonPi uses [WiringPi](http://wiringpi.com "WiringPi") and libCurl
+SqueezeButtonPi uses [pigpio](https://github.com/joan2937/pigpio "PiGpio") and libCurl
 
 ## Configuration
 
 Usage: 
-`sbpd [OPTION...] [e,pin1,pin2,CMD,edge] [b,pin,CMD,edge...]`
+`sbpd [OPTION...] [e,pin1,pin2,CMD,mode] [b,pin,CMD,edge,...]`
 
 Options arguments:
   
@@ -67,10 +67,13 @@ Arguments are a comma-separated list of configuration parameters:
         e,pin1,pin2,CMD[,edge]
             "e" for "Encoder"
             p1, p2: GPIO PIN numbers in BCM-notation
-            CMD: Command. Unused for encoders, always VOLM for Volume
-            mode: Optional. one of
-                0 - Detent mode - Assumes 1 dial click is 4 steps.
-                1 - Step mode (default)
+            CMD: Command. one of. \n\
+                VOLU for Volume\n\
+                TRAC for Prev/Next track\n\
+                KEY:<Positive key_name>-<Negative key_name>
+            mode: Optional. one of\n\
+                1   - Step mode (default)\n\
+                2-9 - Detent mode - Assumes 1 dial click is x steps.
 
     For buttons: 
         b,pin,CMD[,resist,pressed,CMD_LONG,long_time]
@@ -87,6 +90,8 @@ Arguments are a comma-separated list of configuration parameters:
                      use -f option, ref:sbpd_commands.cfg 
                  Command type SCRIPT.
                    SCRIPT:/path/to/shell/script.sh
+                 Command type KEY.
+                      KEY:<linux key_name>.
             resist: Optional. one of
                 0 - Internal resistor off
                 1 - pull down         - input puts 3v on GPIO pin
@@ -117,6 +122,11 @@ Arguments are a comma-separated list of configuration parameters:
     POWR=["button","power"]"
     MIX+=["mixer","volume","+5"]
     MIX-=["mixer","volume","-5"]
+
+## Linux keycodes
+
+    Uses the linux uinput kernel module.  Make sure to load it with sudo modprobe uinput.
+    Keycode definitions can be found: https://github.com/raspberrypi/linux/blob/rpi-4.19.y/include/uapi/linux/input-event-codes.h
 
 ## Security
 

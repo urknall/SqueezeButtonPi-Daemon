@@ -50,6 +50,9 @@ struct button_ctrl
     bool presstype;
     int cmdtype;
     int cmd_longtype;
+	int key_code;
+	int key_code_long;
+
 };
 
 //
@@ -89,8 +92,12 @@ void disconnect_button_ctrl();
 struct encoder_ctrl
 {
     struct encoder * gpio_encoder;
+	int cmd_type;
     volatile long last_value;
     char * fragment;
+	char * fragment_neg;
+	int key_code_pos;
+	int key_code_neg;
 	int limit;
 	volatile long long last_time;
 	int min_time;
@@ -133,5 +140,15 @@ struct lms_command {
 
 int add_lms_command_frament ( char * name, char * value );
 
+//
+// Keyboard controls
+//
+// global variable to initalaize uinput if a keyboard control is configured.
+bool keyboard_inuse;
+//  Keyboad key definitions
+typedef struct{
+	char name[32];
+	int code;
+}key_events_s;
 
 #endif /* control_h */

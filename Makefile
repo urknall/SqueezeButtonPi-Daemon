@@ -7,8 +7,8 @@ STATIC_LDFLAGS = -lpthread -ldl -lrt ./libs/libpigpiod_if2.a -lcurl
 EXECUTABLE = sbpd
 EXECUTABLE-STATIC_CURL = sbpd-static
 
-SOURCES = control.c discovery.c GPIO.c sbpd.c servercomm.c
-DEPS = control.h discovery.h GPIO.h sbpd.h servercomm.h
+SOURCES = control.c discovery.c GPIO.c sbpd.c servercomm.c uinput.c key_event_codes.c
+DEPS = control.h discovery.h GPIO.h sbpd.h servercomm.h uinput.h
 
 OBJECTS = $(SOURCES:.c=.o)
 
@@ -18,6 +18,7 @@ static: $(EXECUTABLE-STATIC_CURL)
 
 $(EXECUTABLE): $(OBJECTS)
 	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
+	strip --strip-unneeded $(EXECUTABLE)
 
 $(EXECUTABLE-STATIC_CURL): $(OBJECTS)
 	$(CC) $(OBJECTS) $(STATIC_LDFLAGS) -o $@

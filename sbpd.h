@@ -65,7 +65,8 @@ typedef enum {
 //
 #define LMS      0
 #define SCRIPT   1
-#define NOTUSED  2
+#define KEYBOARD 2
+#define NOTUSED  3
 
 // supported commands
 // need to be configured
