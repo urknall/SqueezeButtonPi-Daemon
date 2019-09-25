@@ -39,7 +39,7 @@
 #include "sbpd.h"
 #include "control.h"
 #include "servercomm.h"
-#include <wiringPi.h>
+#include <pigpiod_if2.h>
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
@@ -132,7 +132,7 @@ void button_press_cb(const struct button * button, int change, bool presstype) {
 //      cmd_long Command to be used for a long button push, see above command list
 //      long_time: Number of milliseconds to define a long press
 
-int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_long, int long_time) {
+int setup_button_ctrl(int pi, char * cmd, int pin, int resist, int pressed, char * cmd_long, int long_time) {
     char * fragment = NULL;
     char * fragment_long = NULL;
     char * script;
@@ -178,10 +178,10 @@ int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_l
     }
    
     // Make sure resistor setting makes sense, or reset to default
-    if ( (resist != PUD_OFF) && (resist != PUD_DOWN) && (resist == PUD_UP) )
-        resist = PUD_UP;
+    if ( (resist != PI_PUD_OFF) && (resist != PI_PUD_DOWN) && (resist == PI_PUD_UP) )
+        resist = PI_PUD_UP;
 
-    struct button * gpio_b = setupbutton(pin, button_press_cb, resist, (bool)(pressed == 0) ? 0 : 1, long_time);
+    struct button * gpio_b = setupbutton(pi, pin, button_press_cb, resist, (bool)(pressed == 0) ? 0 : 1, long_time);
 
     button_ctrls[numberofbuttons].cmdtype = cmdtype;
     button_ctrls[numberofbuttons].shortfragment = fragment;
@@ -191,10 +191,9 @@ int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_l
     button_ctrls[numberofbuttons].gpio_button = gpio_b;
     numberofbuttons++;
     loginfo("Button defined: Pin %d, BCM Resistor: %s, Short Type: %s, Short Fragment: %s , Long Type: %s, Long Fragment: %s, Long Press Time: %i",
-
             pin,
-            (resist == PUD_OFF) ? "both" :
-            (resist == PUD_DOWN) ? "down" : "up",
+            (resist == PI_PUD_OFF) ? "both" :
+            (resist == PI_PUD_DOWN) ? "down" : "up",
             (cmdtype == LMS) ? "LMS" :
             (cmdtype == SCRIPT) ? "Script" : "unused",
             fragment,
@@ -233,6 +232,17 @@ void handle_buttons(struct sbpd_server * server) {
     }
 }
 
+void disconnect_button_ctrl(){
+    int i;
+    for (int cnt = 0; cnt < numberofbuttons; cnt++) {
+        i = callback_cancel(button_ctrls[cnt].gpio_button->cb_id);
+        if (i == 0 ) {
+             loginfo("GPIO %d button callback cancelled.", button_ctrls[cnt].gpio_button->pin);
+        } else {
+             loginfo("Error cancelling callback for GPIO %d.", button_ctrls[cnt].gpio_button->pin);
+        }
+    }
+}
 
 //
 //  Encoder interrupt callback
@@ -251,13 +261,13 @@ void encoder_rotate_cb(const struct encoder * encoder, long change) {
 //          Can be NULL for volume
 //      pin1: the GPIO-Pin-Number for the first pin used
 //      pin2: the GPIO-Pin-Number for the second pin used
-//      edge: one of
-//                  1 - falling edge
-//                  2 - rising edge
-//                  0, 3 - both
+//      mode: one of
+//                  0 - ENCODER_MODE_DETENT
+//                  1 - ENCODER_MODE_STEP  <default>
+
 //
 //
-int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge) {
+int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int mode) {
     char * fragment = NULL;
     if (strlen(cmd) > 4)
         return -1;
@@ -276,19 +286,19 @@ int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge) {
         encoder_ctrls[numberofencoders].min_time = 500;
     } 
     if ( fragment == NULL ) {
+        loginfo("Only VOLU or TRAC commands are valid for encoders\n");
         return -1;
     }
 
-    struct encoder * gpio_e = setupencoder(pin1, pin2, encoder_rotate_cb, edge);
+    struct encoder * gpio_e = setupencoder(pi, pin1, pin2, encoder_rotate_cb, mode);
     encoder_ctrls[numberofencoders].fragment = fragment;
     encoder_ctrls[numberofencoders].gpio_encoder = gpio_e;
     encoder_ctrls[numberofencoders].last_value = 0;
     encoder_ctrls[numberofencoders].last_time = 0;
     numberofencoders++;
-    loginfo("Rotary encoder defined: Pin %d, %d, Edge: %s, Fragment: \n%s",
+    loginfo("Rotary encoder defined: Pin %d, %d, Mode: %s, Fragment: \n%s",
             pin1, pin2,
-            ((edge != INT_EDGE_FALLING) && (edge != INT_EDGE_RISING)) ? "both" :
-            (edge == INT_EDGE_FALLING) ? "falling" : "rising",
+            (mode == ENCODER_MODE_DETENT) ? "Detent" : "Step",
             fragment);
     return 0;
 }
@@ -310,13 +320,20 @@ void handle_encoders(struct sbpd_server * server) {
     //logdebug("Polling encoders");
 
     int command = LMS;
+    long current_value;
 
     for (int cnt = 0; cnt < numberofencoders; cnt++) {
         //
         //  build volume delta
         //  ignore if > 100: overflow
         //
-        int delta = (int)(encoder_ctrls[cnt].gpio_encoder->value - encoder_ctrls[cnt].last_value);
+        // Detent mode is simply value / 4
+        if ( encoder_ctrls[cnt].gpio_encoder->mode == ENCODER_MODE_DETENT )
+            current_value = encoder_ctrls[cnt].gpio_encoder->detents;
+        else
+            current_value = encoder_ctrls[cnt].gpio_encoder->value;
+
+        int delta = (int)(current_value - encoder_ctrls[cnt].last_value);
         if (delta > 100)
             delta = 0;
         if (delta != 0) {
@@ -327,13 +344,15 @@ void handle_encoders(struct sbpd_server * server) {
                     encoder_ctrls[cnt].gpio_encoder->pin_b,
                     delta,
                     (encoder_ctrls[cnt].min_time) );
-                encoder_ctrls[cnt].last_value = encoder_ctrls[cnt].gpio_encoder->value;
+                encoder_ctrls[cnt].last_value = current_value;
                 return;
             }
 
-            loginfo("Encoder on GPIO %d, %d value change: %d",
+            loginfo("Encoder on GPIO %d, %d - value: %d, detents: %d, change: %d",
                     encoder_ctrls[cnt].gpio_encoder->pin_a,
                     encoder_ctrls[cnt].gpio_encoder->pin_b,
+                    encoder_ctrls[cnt].gpio_encoder->value,
+                    encoder_ctrls[cnt].gpio_encoder->detents,
                     delta);
 
             char fragment[50];
@@ -345,13 +364,30 @@ void handle_encoders(struct sbpd_server * server) {
                      encoder_ctrls[cnt].fragment, prefix, abs(delta));
 
             if (send_command(server, command, fragment)) {
-                encoder_ctrls[cnt].last_value = encoder_ctrls[cnt].gpio_encoder->value;
+                encoder_ctrls[cnt].last_value = current_value;
                 encoder_ctrls[cnt].last_time = time; // chatter filter
             }
         }
     }
 }
 
+void disconnect_encoder_ctrl(){
+    int i;
+    for (int cnt = 0; cnt < numberofencoders; cnt++) {
+        i = callback_cancel(encoder_ctrls[cnt].gpio_encoder->cba_id);
+        if (i == 0 ) {
+             loginfo("GPIO %d encoder callback cancelled.", encoder_ctrls[cnt].gpio_encoder->pin_a);
+        } else {
+             loginfo("Error cancelling callback for GPIO %d.", encoder_ctrls[cnt].gpio_encoder->pin_a);
+        }
+        i = callback_cancel(encoder_ctrls[cnt].gpio_encoder->cbb_id);
+        if (i == 0 ) {
+             loginfo("GPIO %d encoder callback cancelled.", encoder_ctrls[cnt].gpio_encoder->pin_b);
+        } else {
+             loginfo("Error cancelling callback for GPIO %d.", encoder_ctrls[cnt].gpio_encoder->pin_b);
+        }
+    }
+}
 
 
 

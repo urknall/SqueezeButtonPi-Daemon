@@ -78,7 +78,7 @@ static int sysloglevel = LOG_ALERT;
 const char *argp_program_version = USER_AGENT " " VERSION;
 const char *argp_program_bug_address = "<coolio@penguinlovesmusic.com>";
 static error_t parse_opt(int key, char *arg, struct argp_state *state);
-static error_t parse_arg();
+static error_t parse_arg( int pi );  //pass the pigpiod interface number
 //
 //  OPTIONS.  Field 1 in ARGP.
 //  Order of fields: {NAME, KEY, ARG, FLAGS, DOC, GROUP}.
@@ -113,16 +113,16 @@ static char doc[] = "sbpd - SqueezeButtinPiDaemon is a button and rotary encoder
 At least one needs to be specified for the daemon to do anything useful\n\
 Arguments are a comma-separated list of configuration parameters:\n\
 For rotary encoders (one, volume only):\n\
-    e,pin1,pin2,CMD[,edge]\n\
+    e,pin1,pin2,CMD[,mode]\n\
         \"e\" for \"Encoder\"\n\
         p1, p2: GPIO PIN numbers in BCM-notation\n\
         CMD: Command. one of. \n\
                     VOLU for Volume\n\
                     TRAC for Prev/Next track\n\
-        edge: Optional. one of\n\
-                1 - falling edge\n\
-                2 - rising edge\n\
-                0, 3 - both\n\
+        mode: Optional. one of\n\
+                0 - Detent mode - Assumes 1 dial click is 4 steps.\n\
+                1 - Step mode (default)\n\
+\n\
 For buttons:\n\
     b,pin,CMD[,resist,pressed]\n\
         \"b\" for \"Button\"\n\
@@ -187,18 +187,22 @@ int main(int argc, char * argv[]) {
             dup2(fd, STDERR_FILENO);
         }
     }
-    
-    //
-    //  Init GPIO
-    //  Done after daemonization becasue child process needs to have GPIO initilized
-    //
-    init_GPIO();
-    
+
+	//
+	//  Init GPIO
+	//  Done after daemonization becasue child process needs to have GPIO initilized
+	//
+	int pi_interface = init_GPIO();
+	if ( pi_interface < 0 ) {
+		logerr("Could not connect to pigpiod. Is it running?");
+		return -1;
+	}
+
     //
     //  Now parse GPIO elements
     //  Needed to initialize GPIO first
     //
-    error_t arg_err = parse_arg();
+    error_t arg_err = parse_arg( pi_interface );
     
 	if ( arg_err != 0 ) {
        return -2;
@@ -255,7 +259,11 @@ int main(int argc, char * argv[]) {
     //  Shutdown server communication
     //
     shutdown_comm();
-    
+
+	disconnect_button_ctrl();
+	disconnect_encoder_ctrl();
+	shutdown_GPIO( pi_interface );
+
     return 0;
 }
 
@@ -368,10 +376,9 @@ parse_opt (int key, char *arg, struct argp_state *state)
 //          p1, p2: GPIO PIN numbers in BCM-notation
 //          CMD:        VOLU for Volume
 //                      TRAC for Playlist previous/next
-//          edge: Optional. one of
-//                  1 - falling edge
-//                  2 - rising edge
-//                  0, 3 - both
+//          mode: Optional. one of
+//                0 - Detent mode - Assumes 1 dial click is 4 steps.
+//                1 - Step mode (default)
 //  For buttons:
 //      b,pin,CMD[,resist,pressed,CMD_LONG]
 //          "b" for "Button"
@@ -394,7 +401,7 @@ parse_opt (int key, char *arg, struct argp_state *state)
 //           CMD_LONG: Command to be used for a long button push, see above command list
 //           long_time: Number of millivoid seconds to define a long press
 //
-static error_t parse_arg() {
+static error_t parse_arg( int pi ) {
     for (int arg_num = 0; arg_num < arg_element_count; arg_num++) {
         char * arg = arg_elements[arg_num];
         {
@@ -413,14 +420,14 @@ static error_t parse_arg() {
                         p2 = (int)strtol(string, NULL, 10);
                     char * cmd = strtok(NULL, ",");
                     string = strtok(NULL, ",");
-                    int edge = 0;
+                    int mode = 1;
                     if (string)
-                        edge = (int)strtol(string, NULL, 10);
+                        mode = (int)strtol(string, NULL, 10);
                     if ( (p1 == 0) | (p2 == 0) | (cmd == NULL) ) {
                         logerr("Encoder argument error");
                         return ARGP_ERR_UNKNOWN;
                     }
-                    setup_encoder_ctrl(cmd, p1, p2, edge);
+                    setup_encoder_ctrl( pi, cmd, p1, p2, mode);
                 }
                     break;
                 case 'b': {
@@ -448,7 +455,7 @@ static error_t parse_arg() {
                         logerr("Button argument error");
                         return ARGP_ERR_UNKNOWN;
                     }
-                    setup_button_ctrl(cmd, pin, resist, pressed, cmd_long, long_time);
+                    setup_button_ctrl(pi, cmd, pin, resist, pressed, cmd_long, long_time);
                 }
                     break;
                     
@@ -496,7 +503,7 @@ void parse_config() {
         if (s==NULL)
             continue;
         else
-            strncpy (value, s, MAXLEN);
+            strncpy (value, s, MAXLEN-1);
         // Remove beginning and trailing whitespace
         trim (value);
 

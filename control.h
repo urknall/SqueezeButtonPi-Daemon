@@ -69,7 +69,7 @@ struct button_ctrl
 //                  2 - rising edge
 //                  0, 3 - both
 //
-int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_long, int long_time);
+int setup_button_ctrl( int pi, char * cmd, int pin, int resist, int pressed, char * cmd_long, int long_time);
 
 //
 //  Polling function: handle button commands
@@ -77,6 +77,11 @@ int setup_button_ctrl(char * cmd, int pin, int resist, int pressed, char * cmd_l
 //      server: the server to send commands to
 //
 void handle_buttons(struct sbpd_server * server);
+
+//
+//  Remove Button callbacks from pigpiod
+//
+void disconnect_button_ctrl();
 
 //
 //  Store command parameters for each button used
@@ -98,12 +103,11 @@ struct encoder_ctrl
 //          Can be NULL for volume or actually anything since it's ignored
 //      pin1: the GPIO-Pin-Number for the first pin used
 //      pin2: the GPIO-Pin-Number for the second pin used
-//      edge: one of
-//                  1 - falling edge
-//                  2 - rising edge
-//                  0, 3 - both
+//      mode: one of
+//                  0 - ENCODER_MODE_DETENT
+//                  1 - ENCODER_MODE_STEP  <default>
 //
-int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge);
+int setup_encoder_ctrl(int pi, char * cmd, int pin1, int pin2, int mode);
 
 //
 //  Polling function: handle encoders
@@ -112,6 +116,10 @@ int setup_encoder_ctrl(char * cmd, int pin1, int pin2, int edge);
 //
 void handle_encoders(struct sbpd_server * server);
 
+//
+//  Remove Button callbacks from pigpiod
+//
+void disconnect_encoder_ctrl();
 
 //
 // Set of commands to send to LMS server

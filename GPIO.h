@@ -42,11 +42,13 @@
 //
 //
 //  Init GPIO functionality
-//  Essentially just initialized WiringPi to use GPIO pin numbering
+//  Connect to the pigpiod interface.
 //
 //
-void init_GPIO();
 
+int init_GPIO();
+
+void shutdown_GPIO( int pi );
 //
 // Buttons and Rotary Encoders
 // Rotary Encoder taken from https://github.com/astine/rotaryencoder
@@ -71,12 +73,14 @@ struct button;
 typedef void (*button_callback_t)(const struct button * button, int change, bool presstype);
 
 struct button {
+    int pi;
     int pin;
     volatile bool value;
     button_callback_t callback;
     uint32_t timepressed;
     bool pressed;
     int long_press_time;
+    int cb_id;
 };
 
 //
@@ -94,12 +98,12 @@ struct button {
 //           The pointer will be NULL is the function failed for any reason
 //
 //
-struct button *setupbutton(int pin,
-                           button_callback_t callback,
+struct button *setupbutton(int pi,
+                           int pin,
+                           button_callback_t b_callback,
                            int resist,
                            bool pressed,
                            int long_press_time);
-
 
 struct encoder;
 
@@ -112,12 +116,21 @@ typedef void (*rotaryencoder_callback_t)(const struct encoder * encoder, long ch
 
 struct encoder
 {
+    int pi;
     int pin_a;
     int pin_b;
     volatile long value;
+    volatile long detents;
     volatile int lastEncoded;
     rotaryencoder_callback_t callback;
+    int mode;
+    int cba_id;
+    int cbb_id;
+    int levA;
+    int levB;
+    int glitch;
 };
+
 
 //
 //
@@ -128,19 +141,19 @@ struct encoder
 //  Parameters:
 //      pin_a, pin_b: GPIO-Pins used in BCM numbering scheme
 //      callback: callback function to be called when encoder state changed
-//      edge: edge to be used for trigger events,
-//            one of INT_EDGE_RISING, INT_EDGE_FALLING or INT_EDGE_BOTH (the default)
+//      mode: operate in ENCODER_MODE_DETENT or , ENCODER_MODE_STEP
+//
 //  Returns: pointer to the new encoder structure
 //           The pointer will be NULL is the function failed for any reason
 //
 //
-struct encoder *setupencoder(int pin_a,
+struct encoder *setupencoder(int pi,
+                             int pin_a,
                              int pin_b,
                              rotaryencoder_callback_t callback,
-                             int edge);
+                             int mode);
 
-
-
-
+#define ENCODER_MODE_DETENT 0
+#define ENCODER_MODE_STEP   1
 
 #endif /* GPIO_h */
