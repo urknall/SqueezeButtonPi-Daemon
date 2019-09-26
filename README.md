@@ -130,9 +130,7 @@ Arguments are a comma-separated list of configuration parameters:
 
 ## Security
 
-One issue with this code is that since it uses WiringPi it needs to be run with root privileges.
-This is not a particularly good idea given that it also communicates over the network so if you run this on the Raspberry Pi controlling your nuclear powerplant in the backyard I would at least advice against exposing it to the internet.
-A better architecture would probably be to fork a separate process running with more limited user rights for the networking stuff.
+As long as /dev/uinput permissions are set user writable, sbpd does not need to run with root permissions.
 
 ## Limitations
 
