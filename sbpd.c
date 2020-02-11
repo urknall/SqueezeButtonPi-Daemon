@@ -208,10 +208,19 @@ int main(int argc, char * argv[]) {
     //  Needed to initialize GPIO first
     //
     error_t arg_err = parse_arg( pi_interface );
-    
+
 	if ( arg_err != 0 ) {
        return -2;
-    }
+   }
+
+	if (configured_parameters & SBPD_cfg_host) {
+		if (!(configured_parameters & SBPD_cfg_port)) {
+			server.port=9000;
+			configured_parameters |= SBPD_cfg_port;
+			loginfo("Server discovery was disabled by setting -A option, using default --port=9000");
+		}
+	}
+
     //
     // Configure signal handling
     //
@@ -221,8 +230,8 @@ int main(int argc, char * argv[]) {
     act.sa_flags     = SA_SIGINFO;
     sigaction( SIGINT, &act, NULL );
     sigaction( SIGTERM, &act, NULL );
-    
-    
+
+
     //
     // Find MAC
     //
@@ -232,7 +241,7 @@ int main(int argc, char * argv[]) {
             return -1;  // no MAC, no control
         discovered_parameters |= SBPD_cfg_MAC;
     }
-    
+
     //
     //  Initialize server communication
     //
@@ -245,13 +254,13 @@ int main(int argc, char * argv[]) {
 	}
 
     init_comm(MAC);
-    
+
     //
     //
     // Main Loop
     //
     //
-	
+
 	loginfo("Starting main loop polling");
     while( !stop_signal ) {
         //
@@ -266,9 +275,9 @@ int main(int argc, char * argv[]) {
         // Just sleep...
         //
         usleep( SCD_SLEEP_TIMEOUT ); // 0.1s
-        
+
     } // end of: while( !stop_signal )
-    
+
     //
     //  Shutdown server communication
     //
@@ -345,7 +354,7 @@ parse_opt (int key, char *arg, struct argp_state *state)
             //  Server port
         case 'P':
             server.port = (uint32_t)strtoul(arg, NULL, 10);
-            loginfo("Options parsing: Manually set http port %s", server.port);
+            loginfo("Options parsing: Manually set http port %lu", server.port);
             configured_parameters |= SBPD_cfg_port;
             break;
             //  Server user name
