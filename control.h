@@ -144,7 +144,7 @@ int add_lms_command_frament ( char * name, char * value );
 // Keyboard controls
 //
 // global variable to initalaize uinput if a keyboard control is configured.
-bool keyboard_inuse;
+extern bool keyboard_inuse;
 //  Keyboad key definitions
 typedef struct{
 	char name[32];
